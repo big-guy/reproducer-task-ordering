@@ -1,0 +1,83 @@
+plugins {
+    id("base")
+}
+
+task reportDuplicates
+
+task validateRepositories {
+    dependsOn ":api:validateRepositories"
+    dependsOn ":demo:validateRepositories"
+}
+
+task publish
+
+task generateModuleArtifactSpec {
+    dependsOn publish
+}
+
+task generateArtifactSpec {
+    dependsOn generateModuleArtifactSpec
+    dependsOn ":api:generateModuleArtifactSpec"
+    dependsOn ":demo:generateModuleArtifactSpec"
+}
+
+task checkDependencyConstraints
+check.dependsOn checkDependencyConstraints, reportDuplicates, validateRepositories
+
+subprojects {
+    apply plugin: 'java-library'
+    apply plugin: 'ivy-publish'
+
+    java.withJavadocJar()
+    java.withSourcesJar()
+
+    sourcesJar {
+        from(sourceSets.main.output)
+    }
+
+    publishing {
+        repositories {
+            ivy {
+                name = "TempPublish"
+                // change to point to your repo, e.g. http://my.org/repo
+                url = layout.buildDirectory.dir("repo")
+            }
+        }
+        publications {
+            javaLibrary(IvyPublication) {
+                from components.java
+            }
+        }
+    }
+
+    task checkDependencyConstraints
+    check.dependsOn checkDependencyConstraints
+
+    task cleanTempPublish(type: Delete) {
+        delete "build/repo"
+    }
+
+    task checkForDuplicates {
+        finalizedBy ":reportDuplicates"
+    }
+    compileJava.shouldRunAfter checkDependencyConstraints
+    check.dependsOn checkForDuplicates
+
+    task generateModuleArtifactSpec {
+        dependsOn publish
+        mustRunAfter publishJavaLibraryPublicationToTempPublishRepository
+    }
+    publishJavaLibraryPublicationToTempPublishRepository {
+        dependsOn cleanTempPublish
+    }
+    task validateRepositories
+}
+
+project(":demo") {
+    dependencies {
+        implementation project(":api")
+    }
+    checkForDuplicates {
+        dependsOn ":api:compileJava"
+    }
+}
